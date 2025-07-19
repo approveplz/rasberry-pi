@@ -1,0 +1,7 @@
+{
+    // force the agent and integrated terminal to start in zsh
+    "terminal.integrated.defaultProfile.osx": "zsh",
+
+    // turn off shell-integration so zsh actually reads your dot-files
+    "terminal.integrated.shellIntegration.enabled": false
+}
