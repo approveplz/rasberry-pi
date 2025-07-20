@@ -29,39 +29,91 @@ This Docker Compose stack creates a **fully automated media pipeline**:
 ## 🚀 Complete Pipeline Flow
 
 ```bash
-# 1. Search torrent sites
-curl -X POST http://localhost:3000/search-download \
+# 1. Search torrent sites (no download)
+curl -X POST http://localhost:3000/search \
   -d '{"query": "Inception 2010", "password": "your-password"}'
 
-# 2. Auto-download best result
+# 2. Search and auto-download best result
 curl -X POST http://localhost:3000/search-download \
-  -d '{"query": "Inception 2010", "autoDownload": true, "password": "your-password"}'
+  -d '{"query": "Inception 2010", "password": "your-password"}'
 
 # 3. Monitor downloads
 curl "http://localhost:3000/torrents?password=your-password"
 
-# 4. Stream via Jellyfin
-# → Files appear in Jellyfin automatically at http://localhost:8096
+# 4. Files are automatically organized every 30 seconds when downloads complete
+# (or manually trigger organization if needed)
+curl -X POST http://localhost:3000/organize \
+  -d '{"password": "your-password"}'
+
+# 5. Scan Jellyfin for new movies
+curl -X POST http://localhost:3000/movies/scan \
+  -d '{"password": "your-password"}'
+
+# 6. Stream via Jellyfin at http://localhost:8096
 ```
 
 ## 🛠️ Prerequisites
 
+-   **macOS (Apple Silicon)**: For development and testing
+-   **Raspberry Pi 4/5 (8GB)**: For final deployment
 -   Docker & Docker Compose installed
+-   Colima + Docker Buildx (for ARM64 builds)
 -   ~2GB free space for services + downloads
 -   Internet connection for torrent indexers
 
+## 🔧 Development Setup (Mac → Raspberry Pi)
+
+This project uses **ARM64 Docker images** that work on both your Mac and Raspberry Pi. Follow these steps to set up the development environment:
+
+### 1. **Install Colima + Buildx**
+
+```bash
+# Install via Homebrew
+brew install colima docker docker-buildx
+
+# Create CLI plugins directory
+mkdir -p ~/.docker/cli-plugins
+
+# Link Buildx plugin
+ln -sf /opt/homebrew/bin/docker-buildx ~/.docker/cli-plugins/docker-buildx
+```
+
+### 2. **Start Colima (Pi-matching specs)**
+
+```bash
+# Start Colima with Raspberry Pi 4/5 matching specs:
+# - 4 CPU cores (same as Pi)
+# - 5GB RAM (leaving 3GB for Pi OS)
+# - ARM64 architecture (native on both Mac and Pi)
+colima start --cpu 4 --memory 5 --disk 30 --vm-type=vz --arch aarch64
+```
+
+### 3. **Configure ARM64 Builder**
+
+```bash
+# Create dedicated ARM64 builder
+docker buildx create --name pibuilder --driver docker-container --platform linux/arm64
+
+# Set as active builder
+docker buildx use pibuilder
+
+# Initialize builder
+docker buildx inspect --bootstrap
+```
+
 ## ⚡ Quick Start
 
-### 1. **Initial Setup**
+### 1. **Project Setup**
 
 ```bash
 git clone <your-repo>
 cd rasberry-pi
 
-# Copy environment template
-cp env.example .env
+# Ensure Colima is running (from Development Setup above)
+colima status  # Should show "Running"
 
-# Edit .env and set your API_PASSWORD
+# The .env file is already configured with default values
+# Edit .env and update your API_PASSWORD and other credentials as needed
 nano .env
 ```
 
@@ -83,7 +135,7 @@ open http://localhost:9117
 echo "JACKETT_API_KEY=your-copied-api-key" >> .env
 
 # Restart services
-npm run docker:restart
+npm restart
 ```
 
 ### 4. **Configure qBittorrent (REQUIRED)**
@@ -100,16 +152,38 @@ docker logs qbittorrent | grep "temporary password"
 echo "QBITTORRENT_PASSWORD=your-permanent-password" >> .env
 
 # Restart services
-npm run docker:restart
+npm restart
 ```
 
-### 5. **Test the API**
+### 5. **Configure Jellyfin (REQUIRED for streaming)**
+
+```bash
+# Open Jellyfin web interface
+open http://localhost:8096
+
+# Complete initial setup: Create admin user, add media libraries
+# Point library to: /media/downloads (for new files) and /media/movies (organized files)
+
+# Generate API key: Dashboard → Advanced → API Keys → Create new key
+# Update .env file:
+echo "JELLYFIN_TOKEN=your-api-key-here" >> .env
+
+# Restart services
+npm restart
+```
+
+### 6. **Test the API**
 
 ```bash
 # Check API status
 curl http://localhost:3000/
 
-# Search for movies
+# Search for movies (no download)
+curl -X POST http://localhost:3000/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Dune", "password": "your-password"}'
+
+# Search and optionally download movies
 curl -X POST http://localhost:3000/search-download \
   -H "Content-Type: application/json" \
   -d '{"query": "Dune", "password": "your-password"}'
@@ -117,11 +191,64 @@ curl -X POST http://localhost:3000/search-download \
 # Check download status
 curl "http://localhost:3000/torrents?password=your-password"
 
-# Download a movie automatically
+# Search and automatically download best movie
 curl -X POST http://localhost:3000/search-download \
   -H "Content-Type: application/json" \
-  -d '{"query": "Inception", "autoDownload": true, "password": "your-password"}'
+  -d '{"query": "Inception", "password": "your-password"}'
+
+# List movies in Jellyfin library
+curl "http://localhost:3000/movies?password=your-password"
+
+# Organize completed downloads (move from /downloads to /movies)
+curl -X POST http://localhost:3000/organize \
+  -H "Content-Type: application/json" \
+  -d '{"password": "your-password"}'
+
+# Scan Jellyfin libraries for new content
+curl -X POST http://localhost:3000/movies/scan \
+  -H "Content-Type: application/json" \
+  -d '{"password": "your-password"}'
 ```
+
+## 🚀 Deployment Workflow (Mac → Raspberry Pi)
+
+Your development workflow creates **identical ARM64 images** that run on both Mac and Pi:
+
+### **Development & Testing (Mac)**
+
+```bash
+# Build ARM64 images locally
+npm run docker:build
+
+# Test full stack on Mac
+npm start
+
+# Everything runs natively at ARM64 speed
+```
+
+### **Deploy to Raspberry Pi**
+
+```bash
+# Option 1: Export/Import (for offline Pi)
+docker save media-api:arm64 | gzip > media-api-arm64.tar.gz
+# Transfer file to Pi, then:
+docker load < media-api-arm64.tar.gz
+
+# Option 2: Registry (for connected Pi)
+docker tag media-api:arm64 your-registry/media-api:arm64
+docker push your-registry/media-api:arm64
+# On Pi: docker pull your-registry/media-api:arm64
+
+# Option 3: Rebuild on Pi (same commands work)
+git pull && npm start
+```
+
+### **Benefits**
+
+-   ✅ **Native Performance**: ARM64 on both Mac and Pi
+-   ✅ **Identical Images**: No architecture surprises
+-   ✅ **Fast Testing**: No emulation overhead
+-   ✅ **Pi-Optimized**: Built with Pi memory constraints in mind
 
 ## 📡 API Endpoints
 
@@ -133,10 +260,11 @@ curl -X POST http://localhost:3000/search-download \
 
 ### Search & Download
 
-| Endpoint           | Method | Description                          | Parameters                                             |
-| ------------------ | ------ | ------------------------------------ | ------------------------------------------------------ |
-| `/search-download` | POST   | Search torrents, optionally download | `query`, `password`, `autoDownload?`, `downloadIndex?` |
-| `/download`        | POST   | Download specific magnet/torrent     | `magnetLink`, `password`, `title?`                     |
+| Endpoint           | Method | Description                                    | Parameters                         |
+| ------------------ | ------ | ---------------------------------------------- | ---------------------------------- |
+| `/search`          | POST   | Search torrents with download preview metadata | `query`, `password`                |
+| `/search-download` | POST   | Search and auto-download best torrent          | `query`, `password`                |
+| `/download`        | POST   | Download specific magnet/torrent               | `magnetLink`, `password`, `title?` |
 
 ### Torrent Management
 
@@ -144,15 +272,67 @@ curl -X POST http://localhost:3000/search-download \
 | ----------- | ------ | -------------------------- | ------------------------- |
 | `/torrents` | GET    | List all torrents & status | `password`, query filters |
 
-### Streaming (Planned)
+### File Organization
 
-| Endpoint      | Method | Description        | Parameters       |
-| ------------- | ------ | ------------------ | ---------------- |
-| `/stream/:id` | GET    | Stream movie by ID | `id`, `password` |
+| Endpoint    | Method | Description                                         | Parameters |
+| ----------- | ------ | --------------------------------------------------- | ---------- |
+| `/organize` | POST   | Move completed downloads from /downloads to /movies | `password` |
+
+### Jellyfin & Streaming
+
+| Endpoint       | Method | Description                    | Parameters           |
+| -------------- | ------ | ------------------------------ | -------------------- |
+| `/movies`      | GET    | List all movies in library     | `password`, `limit?` |
+| `/movies/:id`  | GET    | Get movie details              | `id`, `password`     |
+| `/stream/:id`  | GET    | Stream movie by ID             | `id`, `password`     |
+| `/movies/scan` | POST   | Scan libraries for new content | `password`           |
 
 ## 🔥 Usage Examples
 
-### **Search Movies**
+### **Search Movies (No Download)**
+
+```bash
+curl -X POST http://localhost:3000/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "Inception",
+    "password": "your-password"
+  }'
+```
+
+**Response includes download metadata:**
+
+```json
+{
+    "message": "Found 10 results for \"Inception\"",
+    "query": "Inception",
+    "results": [
+        {
+            "title": "Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMU",
+            "size": "66.30 GB",
+            "seeders": 599,
+            "peers": 143,
+            "magnetLink": "magnet:?xt=urn:btih:...",
+            "indexer": "TheRARBG"
+        }
+    ],
+    "downloadMetadata": {
+        "wouldDownload": {
+            "index": 0,
+            "result": {
+                "title": "Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMU",
+                "size": "66.30 GB",
+                "seeders": 599,
+                "peers": 143
+            },
+            "reason": "Highest seeders (results sorted by seeders descending)",
+            "note": "This would be downloaded if using /search-download (always auto-downloads best result)"
+        }
+    }
+}
+```
+
+### **Search and Auto-Download Best Result**
 
 ```bash
 curl -X POST http://localhost:3000/search-download \
@@ -203,7 +383,35 @@ curl -X POST http://localhost:3000/search-download \
   }'
 ```
 
+### **Organize Completed Downloads**
+
+After downloads finish, move them from `/downloads` to `/movies` for better organization and Jellyfin library management:
+
+```bash
+curl -X POST http://localhost:3000/organize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "password": "your-password"
+  }'
+```
+
 **Response:**
+
+```json
+{
+    "message": "Organized 1 items, 0 errors",
+    "organized": [
+        {
+            "original": "Inception.2010.UHD.BluRay.2160p.DTS-HD.MA.5.1.DV.HEVC.HYBRID.REMUX-FraMeSToR",
+            "organized": "Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMUX FraMeSToR",
+            "path": "/app/movies/Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMUX FraMeSToR"
+        }
+    ],
+    "timestamp": "2025-07-19T19:55:16.447Z"
+}
+```
+
+**Response (automatically downloads best result):**
 
 ```json
 {
@@ -221,18 +429,6 @@ curl -X POST http://localhost:3000/search-download \
     "message": "Successfully added \"Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMU\" to qBittorrent"
   }
 }
-```
-
-### **Download Specific Result**
-
-```bash
-curl -X POST http://localhost:3000/search-download \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "Inception",
-    "downloadIndex": 2,
-    "password": "your-password"
-  }'
 ```
 
 ### **Monitor Downloads**
@@ -285,13 +481,14 @@ curl -X POST http://localhost:3000/download \
 
 ## 🛠️ NPM Scripts
 
-| Command                  | Description                               |
-| ------------------------ | ----------------------------------------- |
-| `npm start`              | 🚀 Start entire stack (first time)        |
-| `npm stop`               | 🛑 Stop all services                      |
-| `npm run docker:restart` | 🔄 Restart + rebuild (after code changes) |
-| `npm run docker:logs`    | 📋 View all logs                          |
-| `npm run docker:rebuild` | 🔨 Rebuild containers                     |
+| Command                 | Description                                |
+| ----------------------- | ------------------------------------------ |
+| `npm start`             | 🚀 Start entire stack (builds ARM64 first) |
+| `npm stop`              | 🛑 Stop all services                       |
+| `npm restart`           | 🔄 Restart + rebuild (after code changes)  |
+| `npm run docker:build`  | 🔨 Build ARM64 API image                   |
+| `npm run docker:logs`   | 📋 View all logs                           |
+| `npm run docker:export` | 📦 Export ARM64 image for Pi deployment    |
 
 ## 📂 Directory Structure
 
@@ -308,16 +505,34 @@ rasberry-pi/
 │   ├── qbittorrent/      # Download client settings
 │   └── jellyfin/         # Media server database
 ├── downloads/             # 🤖 AUTO-GENERATED - Active downloads (gitignored)
-├── movies/               # 🤖 AUTO-GENERATED - Organized library (gitignored, not implemented)
+├── movies/               # 🤖 AUTO-GENERATED - Organized library (use /organize to populate)
 ├── docker-compose.yml    # 🐳 Multi-container setup
 └── .env                 # 🔐 Your secrets (gitignored)
 ```
 
-## 🆕 New Service Architecture
+## 🔄 Complete Media Workflow
 
-The API now uses a clean **service-based architecture**:
+Your media server follows this **automated pipeline**:
+
+1. **🔍 Search & Download** - Find and download movies via `/search-download`
+2. **📁 Organize Files** - Automatically move completed downloads every 30s (or manually via `/organize`)
+3. **🔄 Scan Library** - Automatically scan Jellyfin libraries when files are organized
+4. **🎬 Stream** - Watch your organized movies via Jellyfin UI
+
+### Automatic Organization
+
+-   **Automatic**: Files are organized every 30 seconds when downloads complete
+-   **Manual**: You can still call `/organize` manually if needed
+-   **Integrated**: Auto-triggers Jellyfin library scan after organizing files
+-   **Best Practice**: Let the system handle it automatically, or manually run organize → check movies
+
+## 🆕 Service Architecture
+
+The API uses a clean **service-based architecture**:
 
 -   **QBittorrentService** - Handles all torrent operations with session management
+-   **JellyfinService** - Manages media library and streaming integration
+-   **Automatic organization** - Monitors downloads every 30s and organizes completed files
 -   **Automatic reconnection** - Handles session timeouts gracefully
 -   **Comprehensive error handling** - Detailed error messages and recovery
 
@@ -383,7 +598,7 @@ docker logs qbittorrent | grep "password"
 
 # Set permanent password via http://localhost:8080
 # Update .env with QBITTORRENT_PASSWORD=your-password
-# Restart: npm run docker:restart
+# Restart: npm restart
 ```
 
 **❌ Jackett missing API key**
@@ -391,7 +606,7 @@ docker logs qbittorrent | grep "password"
 ```bash
 # Get API key from http://localhost:9117
 # Add to .env: JACKETT_API_KEY=your-key
-# Restart: npm run docker:restart
+# Restart: npm restart
 ```
 
 **❌ Search timeouts**
@@ -434,23 +649,12 @@ docker-compose restart jackett
 
 ## 🔮 Future Enhancements
 
--   [ ] **Automatic file organization** (downloads → movies folder)
+-   [x] **File organization** (downloads → movies folder) - ✅ **COMPLETED**
+-   [x] **Jellyfin API integration** - ✅ **COMPLETED**
+-   [x] **ARM64 Docker builds** (Mac → Pi deployment) - ✅ **COMPLETED**
+-   [x] **Automated organization** (trigger organize after downloads complete) - ✅ **COMPLETED**
 -   [ ] **Real-time download progress** via WebSocket
--   [ ] **Jellyfin API integration** for automatic library updates
 -   [ ] **Download quality preferences** (1080p, 4K, etc.)
 -   [ ] **Automated subtitle downloading**
 -   [ ] **Mobile-friendly web interface**
 -   [ ] **Multi-user support with individual libraries**
-
-## 📝 License
-
-This project is open source. Use responsibly and in accordance with your local laws regarding torrenting and media consumption.
-
----
-
-**🎬 Ready to build your own Netflix? Start downloading!**
-
-```bash
-npm start
-# Then visit http://localhost:3000
-```

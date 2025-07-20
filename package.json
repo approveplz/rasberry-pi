@@ -5,16 +5,17 @@
     "main": "api/src/index.js",
     "scripts": {
         "dev": "node api/src/index.js",
-        "docker:build": "docker-compose build --no-cache",
+        "docker:build": "docker buildx build --platform linux/arm64 -t media-api:arm64 --load ./api",
         "docker:up": "docker-compose up -d",
         "docker:down": "docker-compose down",
         "docker:logs": "docker-compose logs -f",
         "docker:pull": "docker pull lscr.io/linuxserver/jackett:latest && docker pull lscr.io/linuxserver/qbittorrent:latest && docker pull jellyfin/jellyfin:latest",
-        "start": "docker-compose down && docker-compose up -d --build && npm run status",
+        "start": "docker-compose down && npm run docker:build && docker-compose up -d && npm run status",
         "stop": "docker-compose down",
         "restart": "npm run start",
         "status": "echo '\\n🚀 Services Status:' && sleep 3 && docker-compose ps && echo '\\n📱 Access URLs:' && echo '  API:          http://localhost:3000' && echo '  Jackett:      http://localhost:9117' && echo '  qBittorrent:  http://localhost:8080' && echo '  Jellyfin:     http://localhost:8096'",
-        "logs": "docker-compose logs -f"
+        "logs": "docker-compose logs -f",
+        "docker:export": "docker save media-api:arm64 | gzip > media-api-arm64.tar.gz && echo 'ARM64 image exported to media-api-arm64.tar.gz'"
     },
     "keywords": [
         "docker",

@@ -26,8 +26,8 @@
 services:
   # API Service - Our custom Express app
   api:
-    # BUILD: Instead of using a pre-made image, build our own from the Dockerfile in ./api/
-    build: ./api
+    # IMAGE: Use our pre-built ARM64 image (compatible with both Mac and Pi)
+    image: media-api:arm64
     
     # CONTAINER NAME: Give this container a custom name instead of auto-generated one
     container_name: media-api
