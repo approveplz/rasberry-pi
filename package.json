@@ -1,24 +1,26 @@
 {
     "name": "rasberry-pi-media-server",
     "version": "1.0.0",
-    "description": "Docker-based media server for Raspberry Pi with torrenting and streaming capabilities",
+    "description": "Docker-based media server for Raspberry Pi with Overseerr, Radarr, torrenting and streaming capabilities",
     "main": "api/src/index.js",
     "scripts": {
-        "dev": "node api/src/index.js",
-        "docker:build": "docker buildx build --platform linux/arm64 -t media-api:arm64 --load ./api",
+        "dev": "echo 'Use Overseerr web UI at http://localhost:5055 for development'",
         "docker:up": "docker-compose up -d",
         "docker:down": "docker-compose down",
         "docker:logs": "docker-compose logs -f",
-        "docker:pull": "docker pull lscr.io/linuxserver/jackett:latest && docker pull lscr.io/linuxserver/qbittorrent:latest && docker pull jellyfin/jellyfin:latest",
-        "start": "docker-compose down && npm run docker:build && docker-compose up -d && npm run status",
+        "docker:pull": "docker pull sctx/overseerr:latest && docker pull lscr.io/linuxserver/radarr:latest && docker pull lscr.io/linuxserver/jackett:latest && docker pull lscr.io/linuxserver/qbittorrent:latest && docker pull lscr.io/linuxserver/plex:latest",
+        "start": "docker-compose down && docker-compose up -d && npm run status",
         "stop": "docker-compose down",
         "restart": "npm run start",
-        "status": "echo '\\n🚀 Services Status:' && sleep 3 && docker-compose ps && echo '\\n📱 Access URLs:' && echo '  API:          http://localhost:3000' && echo '  Jackett:      http://localhost:9117' && echo '  qBittorrent:  http://localhost:8080' && echo '  Jellyfin:     http://localhost:8096'",
+        "status": "echo '\\n🚀 Services Status:' && sleep 3 && docker-compose ps && echo '\\n📱 Access URLs:' && echo '  Overseerr:    http://localhost:5055' && echo '  Radarr:       http://localhost:7878' && echo '  Jackett:      http://localhost:9117' && echo '  qBittorrent:  http://localhost:8080' && echo '  Plex:         http://localhost:32400'",
         "logs": "docker-compose logs -f",
-        "docker:export": "docker save media-api:arm64 | gzip > media-api-arm64.tar.gz && echo 'ARM64 image exported to media-api-arm64.tar.gz'"
+        "setup": "echo '\\n🎯 Initial Setup Instructions:' && echo '1. Start services: npm start' && echo '2. Open Overseerr: http://localhost:5055' && echo '3. Complete initial setup in Overseerr web UI' && echo '4. Configure services in Overseerr settings' && echo '5. Start requesting movies!'"
     },
     "keywords": [
         "docker",
+        "overseerr",
+        "radarr",
+        "plex",
         "torrent",
         "media-server",
         "raspberry-pi"

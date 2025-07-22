@@ -7,65 +7,66 @@
 #
 # WHAT IS DOCKER COMPOSE?  
 # - Tool for defining and running multi-container Docker applications
-# - Instead of running 4 separate "docker run" commands, this file defines everything
+# - Instead of running 5 separate "docker run" commands, this file defines everything
 # - "docker-compose up" starts all services, "docker-compose down" stops them
 #
 # OUR MEDIA STACK:
-# 1. API (custom) - Express.js server with torrent/streaming endpoints
-# 2. Jackett - Searches torrent sites and provides a unified API
-# 3. qBittorrent - Downloads torrents that Jackett finds  
-# 4. Jellyfin - Media server that streams your downloaded movies
+# 1. Overseerr - Beautiful web UI for requesting movies/TV shows
+# 2. Radarr - Movie download management and organization
+# 3. Jackett - Searches torrent sites and provides a unified API
+# 4. qBittorrent - Downloads torrents that Jackett finds  
+# 5. Plex - Media server that streams your downloaded movies
 #
 # HOW THEY WORK TOGETHER:
-# API calls Jackett → Jackett finds torrents → API tells qBittorrent to download
-# → Downloaded files appear in Jellyfin → API can stream via Jellyfin
+# Overseerr UI → User requests movie → Overseerr tells Radarr → Radarr asks Jackett for torrents
+# → Jackett finds torrents → Radarr picks best torrent → Radarr tells qBittorrent to download
+# → Downloaded files are organized by Radarr → Files appear in Plex
 #
 # Docker Compose defines multiple containers that work together as a "stack"
 # Each "service" below becomes a separate container when you run "docker-compose up"
 
 services:
-  # API Service - Our custom Express app
-  api:
-    # IMAGE: Use our pre-built ARM64 image (compatible with both Mac and Pi)
-    image: media-api:arm64
+  # OVERSEERR SERVICE - Beautiful web UI for requesting movies/TV shows
+  overseerr:
+    image: sctx/overseerr:latest
+    container_name: overseerr
     
-    # CONTAINER NAME: Give this container a custom name instead of auto-generated one
-    container_name: media-api
-    
-    # PORT MAPPING: Map host port 3000 to container port 3000
-    # Format: "host_port:container_port" - so localhost:3000 reaches the app
-    ports:
-      - "3000:3000"
-    
-    # ENVIRONMENT VARIABLES: Set variables inside the container
-    # These become process.env.NODE_ENV, process.env.JACKETT_URL, etc. in our Node.js app
     environment:
-      - NODE_ENV=production
-      # Docker containers can talk to each other by service name (like "jackett")
-      # This is Docker's internal DNS - "jackett:9117" resolves to the jackett container
-      - JACKETT_URL=http://jackett:9117
-      - QBITTORRENT_URL=http://qbittorrent:8080
-      - JELLYFIN_URL=http://jellyfin:8096
+      - TZ=Etc/UTC
+      - LOG_LEVEL=debug
     
-    # ENV FILE: Load environment variables from .env file (like API_PASSWORD)
-    env_file:
-      - .env
-    
-    # VOLUMES: Mount directories from host machine into container
-    # Format: "host_path:container_path" - so ./downloads on your Mac becomes /app/downloads in container
-    # This lets the container access files on your computer and persist data
     volumes:
-      - ./downloads:/app/downloads
-      - ./movies:/app/movies
+      - ./config/overseerr:/app/config
     
-    # DEPENDS_ON: Start these services before starting this one
-    # Docker will start jackett, qbittorrent, jellyfin first, then this API
+    ports:
+      - "5055:5055"
+    
+    depends_on:
+      - radarr
+      - plex
+    
+    restart: unless-stopped
+
+  # RADARR SERVICE - Movie download management and organization
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    
+    environment:
+      - TZ=Etc/UTC
+    
+    volumes:
+      - ./config/radarr:/config          # Radarr settings and database
+      - ./movies:/media/movies           # Your movie library
+      - ./downloads:/media/downloads     # Recently downloaded files
+    
+    ports:
+      - "7878:7878"                      # Radarr web interface
+    
     depends_on:
       - jackett
       - qbittorrent
-      - jellyfin
     
-    # RESTART POLICY: Automatically restart if container crashes (unless manually stopped)
     restart: unless-stopped
 
   # JACKETT SERVICE - Torrent indexer (searches torrent sites for you)
@@ -111,26 +112,27 @@ services:
       - "6881:6881/udp"              # BitTorrent protocol ports (UDP)
     restart: unless-stopped
 
-  # JELLYFIN SERVICE - Media server (like your own Netflix)
-  jellyfin:
-    image: jellyfin/jellyfin:latest
-    container_name: jellyfin
+  # PLEX SERVICE - Media server (like your own Netflix)
+  plex:
+    image: lscr.io/linuxserver/plex:latest
+    container_name: plex
     
     environment:
       - TZ=Etc/UTC
+      - PLEX_CLAIM=your-plex-claim-token  # Get from https://www.plex.tv/claim/
     
     volumes:
-      - ./config/jellyfin:/config     # Jellyfin database and settings
-      - ./movies:/media/movies        # Your movie library
-      - ./downloads:/media/downloads  # Recently downloaded files
+      - ./config/plex:/config          # Plex database and settings
+      - ./movies:/media/movies         # Your movie library
+      - ./downloads:/media/downloads   # Recently downloaded files
     
     ports:
-      - "8096:8096"                   # Jellyfin web interface
+      - "32400:32400"                  # Plex web interface
+      - "1900:1900/udp"               # Plex discovery
+      - "3005:3005"                   # Plex companion
+      - "5353:5353/udp"               # Plex companion
+      - "8324:8324"                   # Plex companion
     
-    # HARDWARE ACCELERATION: Commented out because macOS doesn't have /dev/dri
-    # On Linux, this would let Jellyfin use GPU for video encoding
-    # devices:
-    #   - /dev/dri:/dev/dri # For hardware acceleration (only available on Linux)
     restart: unless-stopped
 
 # DOCKER NETWORKS: Create a custom network so all containers can communicate

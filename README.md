@@ -1,55 +1,50 @@
-# Raspberry Pi Media Server
+# Raspberry Pi Media Server with Overseerr
 
-A complete Docker-based media server for searching, downloading, and streaming movies with a powerful public API.
+A complete Docker-based media server for requesting, downloading, and streaming movies with a beautiful web interface powered by Overseerr.
 
 ## 🎯 What This Creates
 
 This Docker Compose stack creates a **fully automated media pipeline**:
 
-1. **🔍 Search** - Find movies across multiple torrent sites via Jackett
-2. **⬇️ Download** - Automatically download torrents via qBittorrent
-3. **📁 Organize** - Store completed downloads in organized library
-4. **🎬 Stream** - Stream your movies via Jellyfin media server
-5. **🚀 API** - Control everything through REST endpoints with authentication
+1. **🎨 Request** - Beautiful web UI for requesting movies/TV shows via Overseerr
+2. **🔍 Search** - Automatically search torrent sites via Jackett integration
+3. **⬇️ Download** - Automatically download approved requests via qBittorrent
+4. **📁 Organize** - Store completed downloads in organized library
+5. **🎬 Stream** - Stream your movies via Plex media server
+6. **🔄 Sync** - Automatic library scanning and status updates
 
 ## 🏗️ Architecture
 
-**4 Docker Services Working Together:**
+**5 Docker Services Working Together:**
 
 ```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│   Custom    │    │   Jackett   │    │ qBittorrent │    │  Jellyfin   │
-│     API     │◄──►│   Search    │    │  Download   │    │   Stream    │
-│ (Node.js)   │    │   Engine    │    │   Client    │    │   Server    │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
-       │                    │                  │                  │
-       └─────────── Complete Pipeline Automation ──────────────────┘
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  Overseerr  │    │   Radarr    │    │   Jackett   │    │ qBittorrent │    │    Plex     │
+│   Web UI    │◄──►│   Movie     │◄──►│   Search    │    │  Download   │    │   Stream    │
+│ (Requests)  │    │ Management  │    │   Engine    │    │   Client    │    │   Server    │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+       │                    │                  │                  │                  │
+       └─────────── Complete Pipeline Automation ──────────────────────────────────────┘
 ```
 
 ## 🚀 Complete Pipeline Flow
 
 ```bash
-# 1. Search torrent sites (no download)
-curl -X POST http://localhost:3000/search \
-  -d '{"query": "Inception 2010", "password": "your-password"}'
+# 1. Start all services
+npm start
 
-# 2. Search and auto-download best result
-curl -X POST http://localhost:3000/search-download \
-  -d '{"query": "Inception 2010", "password": "your-password"}'
+# 2. Access Overseerr web interface
+open http://localhost:5055
 
-# 3. Monitor downloads
-curl "http://localhost:3000/torrents?password=your-password"
+# 3. Configure services in Overseerr:
+#    - Add Plex server
+#    - Add Radarr server (with Jackett integration)
+#    - Configure user permissions and auto-approval
 
-# 4. Files are automatically organized every 30 seconds when downloads complete
-# (or manually trigger organization if needed)
-curl -X POST http://localhost:3000/organize \
-  -d '{"password": "your-password"}'
-
-# 5. Scan Jellyfin for new movies
-curl -X POST http://localhost:3000/movies/scan \
-  -d '{"password": "your-password"}'
-
-# 6. Stream via Jellyfin at http://localhost:8096
+# 4. Request movies through the beautiful web UI
+# 5. Approve requests (or set auto-approval)
+# 6. Downloads start automatically
+# 7. Radarr organizes files and they appear in Plex
 ```
 
 ## 🛠️ Prerequisites
@@ -112,15 +107,21 @@ cd rasberry-pi
 # Ensure Colima is running (from Development Setup above)
 colima status  # Should show "Running"
 
-# The .env file is already configured with default values
-# Edit .env and update your API_PASSWORD and other credentials as needed
-nano .env
+# Start all services
+npm start
 ```
 
-### 2. **Start All Services**
+### 2. **Configure Overseerr (REQUIRED)**
 
 ```bash
-npm start              # Builds API + starts all 4 services
+# Open Overseerr web interface
+open http://localhost:5055
+
+# Complete initial setup:
+# 1. Create admin account
+# 2. Add Jellyfin server (http://jellyfin:8096)
+# 3. Add qBittorrent download client (http://qbittorrent:8080)
+# 4. Add Jackett indexers (http://jackett:9117)
 ```
 
 ### 3. **Configure Jackett (REQUIRED)**
@@ -131,11 +132,7 @@ open http://localhost:9117
 
 # Add indexers: Click "Add Indexer" → Add public trackers
 # Copy API key: Top-right corner → Copy API Key
-# Update .env file:
-echo "JACKETT_API_KEY=your-copied-api-key" >> .env
-
-# Restart services
-npm restart
+# Add to Overseerr: Settings → Download Clients → Jackett
 ```
 
 ### 4. **Configure qBittorrent (REQUIRED)**
@@ -148,66 +145,108 @@ open http://localhost:8080
 docker logs qbittorrent | grep "temporary password"
 
 # Set permanent password in WebUI → Tools → Options → WebUI
-# Update .env file:
-echo "QBITTORRENT_PASSWORD=your-permanent-password" >> .env
-
-# Restart services
-npm restart
+# Add to Overseerr: Settings → Download Clients → qBittorrent
 ```
 
-### 5. **Configure Jellyfin (REQUIRED for streaming)**
+### 5. **Configure Radarr (REQUIRED for movie management)**
 
 ```bash
-# Open Jellyfin web interface
-open http://localhost:8096
+# Open Radarr web interface
+open http://localhost:7878/web
+
+# Complete initial setup: Create admin user, add movie library
+# Point library to: /media/movies (your movie library)
+
+# Get API key: Settings → General → Security → API Key
+# Add to Overseerr: Settings → Services → Radarr
+```
+
+### 6. **Connect Radarr to Jackett (REQUIRED for searching)**
+
+```bash
+# In Radarr, go to Settings → Indexers
+# Click "Add Indexer" → "Torznab"
+
+# Configure the Torznab indexer:
+# Name: Jackett
+# URL: http://localhost:9117/api/v2.0/indexers/all/results/torznab
+# API Key: (Copy from Jackett web interface - top right "Copy API Key" button)
+
+# Enable all search options:
+# ✅ Enable RSS
+# ✅ Enable Automatic Search
+# ✅ Enable Interactive Search
+
+# Click "Test" to verify connection, then "Save"
+```
+
+### 7. **Connect Radarr to qBittorrent (REQUIRED for downloading)**
+
+```bash
+# In Radarr, go to Settings → Download Clients
+# Click "Add" → "qBittorrent"
+
+# Configure qBittorrent connection:
+# Host: localhost (or qbittorrent)
+# Port: 8080
+# Username: admin
+# Password: (your qBittorrent password)
+# Category: movies (optional)
+
+# Click "Test" to verify connection, then "Save"
+```
+
+### 8. **Configure Radarr Root Folder (REQUIRED for file organization)**
+
+```bash
+# In Radarr, go to Settings → Media Management
+# Click "Add Root Folder"
+# Path: /media/movies
+# This tells Radarr where to store downloaded movies
+```
+
+### 9. **Configure Plex (REQUIRED for streaming)**
+
+```bash
+# Open Plex web interface
+open http://localhost:32400
 
 # Complete initial setup: Create admin user, add media libraries
-# Point library to: /media/downloads (for new files) and /media/movies (organized files)
+# Point library to: /media/movies (your movie library)
 
-# Generate API key: Dashboard → Advanced → API Keys → Create new key
-# Update .env file:
-echo "JELLYFIN_TOKEN=your-api-key-here" >> .env
-
-# Restart services
-npm restart
+# Add to Overseerr: Settings → Services → Plex
 ```
 
-### 6. **Test the API**
+### 10. **Connect Overseerr to Radarr (REQUIRED for automation)**
 
 ```bash
-# Check API status
-curl http://localhost:3000/
+# In Overseerr, go to Settings → Services
+# Click "Add Service" → "Radarr"
 
-# Search for movies (no download)
-curl -X POST http://localhost:3000/search \
-  -H "Content-Type: application/json" \
-  -d '{"query": "Dune", "password": "your-password"}'
+# Configure Radarr connection:
+# Server Name: radarr
+# Hostname or IP Address: http://radarr (or http://localhost)
+# Port: 7878
+# API Key: (Copy from Radarr Settings → General → Security → API Key)
+# Quality Profile: (Select your preferred quality, e.g., "Ultra-HD")
+# Root Folder: /media/movies
+# Minimum Availability: Released
+# Enable Automatic Search: ✅
 
-# Search and optionally download movies
-curl -X POST http://localhost:3000/search-download \
-  -H "Content-Type: application/json" \
-  -d '{"query": "Dune", "password": "your-password"}'
+# Click "Test" to verify connection, then "Add Server"
+```
 
-# Check download status
-curl "http://localhost:3000/torrents?password=your-password"
+### 11. **Test the Complete Pipeline**
 
-# Search and automatically download best movie
-curl -X POST http://localhost:3000/search-download \
-  -H "Content-Type: application/json" \
-  -d '{"query": "Inception", "password": "your-password"}'
-
-# List movies in Jellyfin library
-curl "http://localhost:3000/movies?password=your-password"
-
-# Organize completed downloads (move from /downloads to /movies)
-curl -X POST http://localhost:3000/organize \
-  -H "Content-Type: application/json" \
-  -d '{"password": "your-password"}'
-
-# Scan Jellyfin libraries for new content
-curl -X POST http://localhost:3000/movies/scan \
-  -H "Content-Type: application/json" \
-  -d '{"password": "your-password"}'
+```bash
+# 1. Request a movie through Overseerr UI
+# 2. Approve the request (or set auto-approval)
+# 3. Overseerr sends request to Radarr
+# 4. Radarr searches Jackett for torrents
+# 5. Radarr sends best torrent to qBittorrent
+# 6. Monitor download progress in qBittorrent
+# 7. Radarr organizes the movie when download completes
+# 8. Movie appears in Plex for streaming
 ```
 
 ## 🚀 Deployment Workflow (Mac → Raspberry Pi)
@@ -217,9 +256,6 @@ Your development workflow creates **identical ARM64 images** that run on both Ma
 ### **Development & Testing (Mac)**
 
 ```bash
-# Build ARM64 images locally
-npm run docker:build
-
 # Test full stack on Mac
 npm start
 
@@ -229,17 +265,12 @@ npm start
 ### **Deploy to Raspberry Pi**
 
 ```bash
-# Option 1: Export/Import (for offline Pi)
-docker save media-api:arm64 | gzip > media-api-arm64.tar.gz
-# Transfer file to Pi, then:
-docker load < media-api-arm64.tar.gz
+# Option 1: Registry (for connected Pi)
+docker tag sctx/overseerr:latest your-registry/overseerr:latest
+docker push your-registry/overseerr:latest
+# On Pi: docker pull your-registry/overseerr:latest
 
-# Option 2: Registry (for connected Pi)
-docker tag media-api:arm64 your-registry/media-api:arm64
-docker push your-registry/media-api:arm64
-# On Pi: docker pull your-registry/media-api:arm64
-
-# Option 3: Rebuild on Pi (same commands work)
+# Option 2: Rebuild on Pi (same commands work)
 git pull && npm start
 ```
 
@@ -250,262 +281,37 @@ git pull && npm start
 -   ✅ **Fast Testing**: No emulation overhead
 -   ✅ **Pi-Optimized**: Built with Pi memory constraints in mind
 
-## 📡 API Endpoints
-
-### Core Functionality
-
-| Endpoint | Method | Description             | Example                      |
-| -------- | ------ | ----------------------- | ---------------------------- |
-| `/`      | GET    | Service status & health | `curl http://localhost:3000` |
-
-### Search & Download
-
-| Endpoint           | Method | Description                                    | Parameters                         |
-| ------------------ | ------ | ---------------------------------------------- | ---------------------------------- |
-| `/search`          | POST   | Search torrents with download preview metadata | `query`, `password`                |
-| `/search-download` | POST   | Search and auto-download best torrent          | `query`, `password`                |
-| `/download`        | POST   | Download specific magnet/torrent               | `magnetLink`, `password`, `title?` |
-
-### Torrent Management
-
-| Endpoint    | Method | Description                | Parameters                |
-| ----------- | ------ | -------------------------- | ------------------------- |
-| `/torrents` | GET    | List all torrents & status | `password`, query filters |
-
-### File Organization
-
-| Endpoint    | Method | Description                                         | Parameters |
-| ----------- | ------ | --------------------------------------------------- | ---------- |
-| `/organize` | POST   | Move completed downloads from /downloads to /movies | `password` |
-
-### Jellyfin & Streaming
-
-| Endpoint       | Method | Description                    | Parameters           |
-| -------------- | ------ | ------------------------------ | -------------------- |
-| `/movies`      | GET    | List all movies in library     | `password`, `limit?` |
-| `/movies/:id`  | GET    | Get movie details              | `id`, `password`     |
-| `/stream/:id`  | GET    | Stream movie by ID             | `id`, `password`     |
-| `/movies/scan` | POST   | Scan libraries for new content | `password`           |
-
-## 🔥 Usage Examples
-
-### **Search Movies (No Download)**
-
-```bash
-curl -X POST http://localhost:3000/search \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "Inception",
-    "password": "your-password"
-  }'
-```
-
-**Response includes download metadata:**
-
-```json
-{
-    "message": "Found 10 results for \"Inception\"",
-    "query": "Inception",
-    "results": [
-        {
-            "title": "Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMU",
-            "size": "66.30 GB",
-            "seeders": 599,
-            "peers": 143,
-            "magnetLink": "magnet:?xt=urn:btih:...",
-            "indexer": "TheRARBG"
-        }
-    ],
-    "downloadMetadata": {
-        "wouldDownload": {
-            "index": 0,
-            "result": {
-                "title": "Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMU",
-                "size": "66.30 GB",
-                "seeders": 599,
-                "peers": 143
-            },
-            "reason": "Highest seeders (results sorted by seeders descending)",
-            "note": "This would be downloaded if using /search-download (always auto-downloads best result)"
-        }
-    }
-}
-```
-
-### **Search and Auto-Download Best Result**
-
-```bash
-curl -X POST http://localhost:3000/search-download \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "Inception",
-    "password": "your-password"
-  }'
-```
-
-**Response:**
-
-```json
-{
-    "message": "Found 10 results for \"Inception\"",
-    "query": "Inception",
-    "results": [
-        {
-            "title": "Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMU",
-            "size": "66.30 GB",
-            "seeders": 0,
-            "peers": 169,
-            "magnetLink": "magnet:?xt=urn:btih:...",
-            "indexer": "TheRARBG",
-            "publishDate": "2025-06-25T13:35:07+00:00"
-        },
-        {
-            "title": "Inception 2010 1080p MAX WEB-DL DDP 5 1 H 265-PiRaTeS",
-            "size": "2.55 GB",
-            "seeders": 599,
-            "peers": 143,
-            "indexer": "TheRARBG"
-        }
-        // ... 8 more results
-    ]
-}
-```
-
-### **Auto-Download Best Result**
-
-```bash
-curl -X POST http://localhost:3000/search-download \
-  -H "Content-Type: application/json" \
-  -d '{
-    "query": "Inception",
-    "autoDownload": true,
-    "password": "your-password"
-  }'
-```
-
-### **Organize Completed Downloads**
-
-After downloads finish, move them from `/downloads` to `/movies` for better organization and Jellyfin library management:
-
-```bash
-curl -X POST http://localhost:3000/organize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "password": "your-password"
-  }'
-```
-
-**Response:**
-
-```json
-{
-    "message": "Organized 1 items, 0 errors",
-    "organized": [
-        {
-            "original": "Inception.2010.UHD.BluRay.2160p.DTS-HD.MA.5.1.DV.HEVC.HYBRID.REMUX-FraMeSToR",
-            "organized": "Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMUX FraMeSToR",
-            "path": "/app/movies/Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMUX FraMeSToR"
-        }
-    ],
-    "timestamp": "2025-07-19T19:55:16.447Z"
-}
-```
-
-**Response (automatically downloads best result):**
-
-```json
-{
-  "message": "Found 10 results for \"Inception\"",
-  "results": [...],
-  "download": {
-    "success": true,
-    "downloadedTorrent": {
-      "title": "Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMU",
-      "size": "66.30 GB",
-      "seeders": 0,
-      "indexer": "TheRARBG"
-    },
-    "downloadIndex": 0,
-    "message": "Successfully added \"Inception 2010 UHD BluRay 2160p DTS HD MA 5 1 DV HEVC HYBRID REMU\" to qBittorrent"
-  }
-}
-```
-
-### **Monitor Downloads**
-
-```bash
-# List all active torrents and their status
-curl "http://localhost:3000/torrents?password=your-password"
-```
-
-**Response:**
-
-```json
-{
-    "message": "Found 2 torrents",
-    "torrents": [
-        {
-            "name": "Inception 2010 UHD BluRay...",
-            "size": 71140086723,
-            "progress": 0,
-            "state": "missingFiles",
-            "eta": 8640000,
-            "downloaded": 7526392796,
-            "uploaded": 3398155
-        }
-    ],
-    "timestamp": "2025-07-19T18:44:49.358Z"
-}
-```
-
-**Alternative**: Use qBittorrent web interface directly at http://localhost:8080
-
-### **Direct Magnet Download**
-
-```bash
-curl -X POST http://localhost:3000/download \
-  -H "Content-Type: application/json" \
-  -d '{
-    "magnetLink": "magnet:?xt=urn:btih:...",
-    "title": "My Movie",
-    "password": "your-password"
-  }'
-```
-
 ## 🌐 Web Interfaces
 
--   **API Dashboard**: http://localhost:3000 (your REST API)
+-   **Overseerr**: http://localhost:5055 (main request interface)
 -   **qBittorrent**: http://localhost:8080 (download management)
 -   **Jackett**: http://localhost:9117 (search configuration)
--   **Jellyfin**: http://localhost:8096 (media streaming)
+-   **Radarr**: http://localhost:7878 (movie management)
+-   **Plex**: http://localhost:32400 (media streaming)
 
 ## 🛠️ NPM Scripts
 
-| Command                 | Description                                |
-| ----------------------- | ------------------------------------------ |
-| `npm start`             | 🚀 Start entire stack (builds ARM64 first) |
-| `npm stop`              | 🛑 Stop all services                       |
-| `npm restart`           | 🔄 Restart + rebuild (after code changes)  |
-| `npm run docker:build`  | 🔨 Build ARM64 API image                   |
-| `npm run docker:logs`   | 📋 View all logs                           |
-| `npm run docker:export` | 📦 Export ARM64 image for Pi deployment    |
+| Command               | Description                       |
+| --------------------- | --------------------------------- |
+| `npm start`           | 🚀 Start entire stack             |
+| `npm stop`            | 🛑 Stop all services              |
+| `npm restart`         | 🔄 Restart all services           |
+| `npm run setup`       | 🎯 Guided setup with instructions |
+| `npm run docker:logs` | 📋 View all logs                  |
+| `npm run docker:pull` | 📥 Pull latest images             |
 
 ## 📂 Directory Structure
 
 ```
 rasberry-pi/
-├── api/                    # 🎯 Your Node.js API
-│   ├── src/
-│   │   ├── index.js       # Main API endpoints
-│   │   └── QBittorrentService.js  # 🆕 Service class
-│   ├── package.json
-│   └── Dockerfile
 ├── config/                # 🤖 AUTO-GENERATED (gitignored)
+│   ├── overseerr/        # Overseerr settings and database
+│   ├── radarr/           # Movie management settings
 │   ├── jackett/          # Search indexer configs
 │   ├── qbittorrent/      # Download client settings
-│   └── jellyfin/         # Media server database
+│   └── plex/             # Media server database
 ├── downloads/             # 🤖 AUTO-GENERATED - Active downloads (gitignored)
-├── movies/               # 🤖 AUTO-GENERATED - Organized library (use /organize to populate)
+├── movies/               # 🤖 AUTO-GENERATED - Organized library
 ├── docker-compose.yml    # 🐳 Multi-container setup
 └── .env                 # 🔐 Your secrets (gitignored)
 ```
@@ -514,147 +320,165 @@ rasberry-pi/
 
 Your media server follows this **automated pipeline**:
 
-1. **🔍 Search & Download** - Find and download movies via `/search-download`
-2. **📁 Organize Files** - Automatically move completed downloads every 30s (or manually via `/organize`)
-3. **🔄 Scan Library** - Automatically scan Jellyfin libraries when files are organized
-4. **🎬 Stream** - Watch your organized movies via Jellyfin UI
+1. **🎨 Request** - User requests movie/TV show through Overseerr web UI
+2. **✅ Approve** - Admin approves request (or auto-approval enabled)
+3. **📤 Send to Radarr** - Overseerr sends approved request to Radarr
+4. **🔍 Search** - Radarr searches Jackett for best torrent
+5. **⬇️ Download** - Radarr sends to qBittorrent for download
+6. **📁 Organize** - Radarr automatically organizes files when downloads complete
+7. **🔄 Scan** - Plex libraries are scanned for new content
+8. **🎬 Stream** - Movie is available for streaming in Plex
 
-### Automatic Organization
+## 🎯 Overseerr Features
 
--   **Automatic**: Files are organized every 30 seconds when downloads complete
--   **Manual**: You can still call `/organize` manually if needed
--   **Integrated**: Auto-triggers Jellyfin library scan after organizing files
--   **Best Practice**: Let the system handle it automatically, or manually run organize → check movies
+### **Beautiful Web Interface**
 
-## 🆕 Service Architecture
+-   Modern, responsive design
+-   Movie/TV show discovery
+-   Request management
+-   User management and permissions
 
-The API uses a clean **service-based architecture**:
+### **Automated Workflows**
 
--   **QBittorrentService** - Handles all torrent operations with session management
--   **JellyfinService** - Manages media library and streaming integration
--   **Automatic organization** - Monitors downloads every 30s and organizes completed files
--   **Automatic reconnection** - Handles session timeouts gracefully
--   **Comprehensive error handling** - Detailed error messages and recovery
+-   Auto-approval for trusted users
+-   Automatic download triggering
+-   Library scanning integration
+-   Status tracking and notifications
+
+### **Multi-Service Integration**
+
+-   Plex library management
+-   Radarr movie management
+-   qBittorrent download client
+-   Jackett search indexers
+-   Push notification support
 
 ## 🔧 Advanced Configuration
 
 ### Environment Variables
 
 ```bash
-# Core API
-API_PASSWORD=your-secure-password
-PORT=3000
-
-# Service URLs (auto-configured in docker-compose)
-JACKETT_URL=http://jackett:9117
-QBITTORRENT_URL=http://qbittorrent:8080
-JELLYFIN_URL=http://jellyfin:8096
-
-# Required API Keys & Credentials
-JACKETT_API_KEY=your-jackett-api-key
-QBITTORRENT_USERNAME=admin
-QBITTORRENT_PASSWORD=your-qbittorrent-password
-JELLYFIN_TOKEN=your-jellyfin-api-token
+# PLEX_CLAIM: Get from https://www.plex.tv/claim/
+# Update this in docker-compose.yml before starting services
+PLEX_CLAIM=your-plex-claim-token
 ```
 
-### Custom Download Options
+### Service Configuration
 
-```bash
-# Download with custom options
-curl -X POST http://localhost:3000/download \
-  -H "Content-Type: application/json" \
-  -d '{
-    "magnetLink": "magnet:?xt=urn:btih:...",
-    "title": "My Movie",
-    "savepath": "/downloads/movies/",
-    "category": "movies",
-    "password": "your-password"
-  }'
-```
+All other configuration is done through the web interfaces:
+
+-   **Overseerr**: http://localhost:5055 (main configuration)
+-   **Radarr**: http://localhost:7878 (movie management)
+-   **Jackett**: http://localhost:9117 (search indexers)
+-   **qBittorrent**: http://localhost:8080 (download client)
+-   **Plex**: http://localhost:32400 (media server)
+
+### Overseerr Settings
+
+**Services Configuration:**
+
+-   **Plex**: Add your Plex server for library management
+-   **Radarr**: Configure movie management for automatic downloads
+-   **Jackett**: Add indexers for torrent searching (configured in Radarr)
+
+**User Management:**
+
+-   Create user accounts with different permission levels
+-   Set up auto-approval for trusted users
+-   Configure request limits and restrictions
+
+**Download Settings:**
+
+-   Set download quality preferences in Radarr
+-   Configure download paths and organization in Radarr
+-   Set up notification preferences in Overseerr
 
 ## 🚨 Troubleshooting
 
 ### **Service Status Check**
 
 ```bash
-# Check API status
-curl http://localhost:3000/
-# Returns: {"message":"Media Server API is running!"}
+# Check all services
+npm run status
+
+# View logs
+npm run docker:logs
 ```
 
 **Service Web Interfaces**:
 
+-   Overseerr: http://localhost:5055
 -   qBittorrent: http://localhost:8080
 -   Jackett: http://localhost:9117
 -   Jellyfin: http://localhost:8096
 
 ### Common Issues
 
-**❌ qBittorrent not configured**
+**❌ Overseerr not accessible**
 
 ```bash
-# Check qBittorrent logs for temporary password
-docker logs qbittorrent | grep "password"
+# Check if container is running
+docker ps | grep overseerr
 
-# Set permanent password via http://localhost:8080
-# Update .env with QBITTORRENT_PASSWORD=your-password
-# Restart: npm restart
+# View Overseerr logs
+docker logs overseerr
+
+# Restart Overseerr
+docker-compose restart overseerr
 ```
 
-**❌ Jackett missing API key**
+**❌ Services not connecting in Overseerr**
 
 ```bash
-# Get API key from http://localhost:9117
-# Add to .env: JACKETT_API_KEY=your-key
-# Restart: npm restart
-```
+# Verify service URLs in Overseerr settings:
+# Plex: http://localhost:32400 (or http://plex:32400)
+# Radarr: http://localhost:7878 (or http://radarr:7878)
 
-**❌ Search timeouts**
-
-```bash
-# Check Jackett has working indexers
-open http://localhost:9117
-# Test indexers individually
-# Remove broken ones, add working alternatives
+# Check service logs
+docker logs plex
+docker logs radarr
+docker logs qbittorrent
+docker logs jackett
 ```
 
 **❌ Downloads not starting**
 
 ```bash
-# Test direct download endpoint
-curl -X POST http://localhost:3000/download \
-  -d '{"magnetLink": "magnet:?xt=urn:btih:example", "password": "your-password"}'
-
-# Check qBittorrent WebUI for errors
-open http://localhost:8080
+# Check Radarr configuration in Overseerr
+# Verify Radarr API credentials and connection
+# Test Radarr service in Overseerr settings
+# Check qBittorrent configuration in Radarr
 ```
 
 ### Debug Commands
 
 ```bash
-# View API logs
-docker logs media-api --tail 50
-
 # View all service logs
 npm run docker:logs
 
-# Test individual services
-curl http://localhost:9117/api/v2.0/indexers  # Requires API key
-curl http://localhost:8080/api/v2/app/version # Requires login
+# View specific service logs
+docker logs overseerr --tail 50
+docker logs radarr --tail 50
+docker logs qbittorrent --tail 50
+docker logs jackett --tail 50
+docker logs plex --tail 50
 
 # Restart problematic service
+docker-compose restart overseerr
+docker-compose restart radarr
 docker-compose restart qbittorrent
 docker-compose restart jackett
+docker-compose restart plex
 ```
 
 ## 🔮 Future Enhancements
 
--   [x] **File organization** (downloads → movies folder) - ✅ **COMPLETED**
--   [x] **Jellyfin API integration** - ✅ **COMPLETED**
--   [x] **ARM64 Docker builds** (Mac → Pi deployment) - ✅ **COMPLETED**
--   [x] **Automated organization** (trigger organize after downloads complete) - ✅ **COMPLETED**
--   [ ] **Real-time download progress** via WebSocket
--   [ ] **Download quality preferences** (1080p, 4K, etc.)
+-   [x] **Overseerr integration** - ✅ **COMPLETED**
+-   [x] **Beautiful web UI** - ✅ **COMPLETED**
+-   [x] **Automated request workflow** - ✅ **COMPLETED**
+-   [x] **Multi-user support** - ✅ **COMPLETED**
+-   [ ] **Push notifications** (Discord, Slack, etc.)
+-   [ ] **Mobile app integration**
+-   [ ] **Advanced quality preferences**
 -   [ ] **Automated subtitle downloading**
--   [ ] **Mobile-friendly web interface**
--   [ ] **Multi-user support with individual libraries**
+-   [ ] **Multi-language support**
