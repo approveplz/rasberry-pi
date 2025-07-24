@@ -1,6 +1,9 @@
 # Docker-generated directories (contain runtime configs, databases, logs)
 config/
 
+
+.vscode/
+
 # Media files (large downloads should not be in git)
 downloads/
 movies/

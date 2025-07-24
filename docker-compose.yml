@@ -85,7 +85,7 @@ services:
     # When container is deleted, these files remain on your computer
     volumes:
       - ./config/jackett:/config      # App settings and configuration
-      - ./downloads:/downloads        # Downloaded torrents go here
+      - ./downloads:/media/downloads        # Downloaded torrents go here
     
     # WEB UI ACCESS: Jackett runs a web interface on port 9117
     ports:
@@ -104,7 +104,7 @@ services:
     
     volumes:
       - ./config/qbittorrent:/config  # qBittorrent settings
-      - ./downloads:/downloads        # Where downloaded files go
+      - ./downloads:/media/downloads  # Where downloaded files go
     
     ports:
       - "8080:8080"                   # Web UI for managing torrents
