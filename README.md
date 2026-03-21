@@ -53,7 +53,11 @@ After `docker compose up -d`, configure services in this order:
 2. **qBittorrent** — Get temp password: `npm run qb-creds`. Set a permanent one.
 3. **Radarr** — Settings → Indexers → add Jackett. Settings → Download Clients → add qBittorrent. Set root folder to `/media/movies`.
 4. **Sonarr** — Same as Radarr, but root folder is `/media/tv`.
-5. **Plex** — Claim server at plex.tv/claim, add `/media/movies` and `/media/tv` as libraries.
+5. **Plex** — Must claim via SSH tunnel (Plex requires localhost for first login):
+   ```bash
+   ssh -f -N -L 32400:localhost:32400 pi@<pi-ip>
+   ```
+   Then open `http://localhost:32400/web`, sign in, and add `/media/movies` and `/media/tv` as libraries.
 
 ## NPM scripts
 
@@ -94,6 +98,13 @@ cp .env.template .env
 | FlareSolverr | 512 MB |
 | **Total** | **~5 GB** |
 | Pi OS + headroom | ~3 GB |
+
+> Limits are set via `mem_limit` in docker-compose.yml. Requires cgroup memory support — verify with `docker stats --no-stream`.
+
+## Network notes
+
+- **CGNAT warning:** If your ISP uses CGNAT (check with `traceroute 8.8.8.8` — look for a `100.64.x.x` hop), port forwarding won't work for incoming torrent connections. You'll need a VPN with port forwarding (e.g. Mullvad) for full torrent speeds.
+- **BitTorrent port:** Uses 51413 (non-standard to avoid ISP throttling). Forward this port TCP+UDP to the Pi in your router.
 
 ## Directory structure
 
