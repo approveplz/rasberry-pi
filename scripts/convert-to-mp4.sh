@@ -33,7 +33,7 @@ for f in *.mkv; do
     continue
   fi
   echo "Converting: $f"
-  ffmpeg -i "$f" -c copy -movflags +faststart "$out" -y -loglevel warning
+  ffmpeg -i "$f" -c copy -tag:v hvc1 -movflags +faststart "$out" -y -loglevel warning
   if [ $? -eq 0 ]; then
     echo "  Done. Removing MKV."
     rm "$f"
