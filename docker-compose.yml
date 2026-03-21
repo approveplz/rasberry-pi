@@ -121,8 +121,8 @@ services:
 
     ports:
       - "8080:8080"
-      - "6881:6881"
-      - "6881:6881/udp"
+      - "51413:51413"
+      - "51413:51413/udp"
 
     healthcheck:
       test: curl -f http://localhost:8080 || exit 1
