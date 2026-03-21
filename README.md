@@ -33,10 +33,11 @@ Sonarr (TV shows) ─┘         ↑
 3. **Mount the external drive** (1TB Seagate):
    ```bash
    ssh pi@<pi-ip>
+   sudo apt-get install -y exfat-fuse
    sudo mkdir -p /mnt/seagate
-   sudo mount /dev/sda2 /mnt/seagate
+   sudo mount.exfat-fuse -o uid=1000,gid=1000,umask=000 /dev/sda2 /mnt/seagate
    # Add to fstab for auto-mount on boot:
-   echo "/dev/sda2 /mnt/seagate exfat defaults,nofail 0 0" | sudo tee -a /etc/fstab
+   echo "/dev/sda2 /mnt/seagate exfat-fuse uid=1000,gid=1000,umask=000,nofail 0 0" | sudo tee -a /etc/fstab
    ```
 4. **Log out and back in** (for Docker group), then start the stack:
    ```bash
@@ -145,11 +146,24 @@ Kill the tunnel when done: `pkill -f "ssh -f -N -L 32400"`
 
 ## Important settings
 
-### Storage — external drive
+### Storage — external drive (CRITICAL)
 
-Media is stored on a **1TB Seagate USB drive** mounted at `/mnt/seagate/media-server`. Docker-compose maps this to `/media` inside containers. The SD card only holds the OS and service configs.
+Media is stored on a **1TB Seagate USB drive** (exFAT) mounted at `/mnt/seagate/media-server`. Docker-compose maps this to `/media` inside containers. The SD card only holds the OS and service configs.
 
-The drive auto-mounts via `/etc/fstab`. If it stops mounting, check `lsblk` and verify the fstab entry.
+**The drive MUST be mounted with the FUSE driver** (`exfat-fuse`) so that UID 1000 (the container user) has write access. The kernel exfat driver ignores uid/gid options and mounts as root-only, which causes silent "Permission denied" errors in qBittorrent.
+
+```bash
+# Install FUSE driver (one-time)
+sudo apt-get install -y exfat-fuse
+
+# fstab entry (auto-mount on boot)
+/dev/sda2 /mnt/seagate exfat-fuse uid=1000,gid=1000,umask=000,nofail 0 0
+```
+
+If torrents show "error" state with 0 downloads despite having seeds, check the qBittorrent log for "Permission denied":
+```bash
+sudo docker exec qbittorrent cat /config/qBittorrent/logs/qbittorrent.log | grep "Permission denied"
+```
 
 ### qBittorrent save path
 
@@ -232,7 +246,24 @@ cp .env.template .env
 
 ### Torrents show "Errored" with 0 seeds — nothing downloads
 
-**Most likely cause: qBittorrent banned Radarr/Sonarr's IP.**
+**Check these two things in order:**
+
+**1. Permission denied on external drive (most common)**
+
+The exFAT drive must be mounted with the FUSE driver for UID 1000 write access. If mounted with the kernel driver, qBittorrent connects to peers but can't write data to disk.
+
+```bash
+# Check for permission errors
+sudo docker exec qbittorrent cat /config/qBittorrent/logs/qbittorrent.log | grep "Permission denied"
+
+# Fix: remount with FUSE driver
+cd ~/rasberry-pi && sudo docker compose down
+sudo umount /mnt/seagate
+sudo mount.exfat-fuse -o uid=1000,gid=1000,umask=000 /dev/sda2 /mnt/seagate
+cd ~/rasberry-pi && sudo docker compose up -d
+```
+
+**2. qBittorrent banned Radarr/Sonarr's IP**
 
 This happens when the qBittorrent password changes (e.g. temp password resets on container restart) and Radarr keeps trying the old password.
 
