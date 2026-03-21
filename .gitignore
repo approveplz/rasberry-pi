@@ -7,9 +7,11 @@ config/
 # Media files (large downloads should not be in git)
 downloads/
 movies/
+media/
 
-# Environment file with secrets
+# Environment file with secrets (template is tracked, actual .env is not)
 .env
+!.env.template
 
 # Node.js
 node_modules/

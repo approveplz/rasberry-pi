@@ -1,138 +1,220 @@
-# DOCKER COMPOSE FILE - Orchestrates multiple containers working together
-# 
-# WHAT IS DOCKER?
-# - Docker packages applications and their dependencies into "containers"
-# - Containers are like lightweight virtual machines that run the same way everywhere
-# - Think of it as shipping your app in a standardized box that works on any computer
-#
-# WHAT IS DOCKER COMPOSE?  
-# - Tool for defining and running multi-container Docker applications
-# - Instead of running 5 separate "docker run" commands, this file defines everything
-# - "docker-compose up" starts all services, "docker-compose down" stops them
-#
-# OUR MEDIA STACK:
-# 1. Overseerr - Beautiful web UI for requesting movies/TV shows
-# 2. Radarr - Movie download management and organization
-# 3. Jackett - Searches torrent sites and provides a unified API
-# 4. qBittorrent - Downloads torrents that Jackett finds  
-# 5. Plex - Media server that streams your downloaded movies
-#
-# HOW THEY WORK TOGETHER:
-# Overseerr UI → User requests movie → Overseerr tells Radarr → Radarr asks Jackett for torrents
-# → Jackett finds torrents → Radarr picks best torrent → Radarr tells qBittorrent to download
-# → Downloaded files are organized by Radarr → Files appear in Plex
-#
-# Docker Compose defines multiple containers that work together as a "stack"
-# Each "service" below becomes a separate container when you run "docker-compose up"
+# Media Server Stack
+# Radarr (movies) + Sonarr (TV) → Jackett (search) → qBittorrent (download) → Plex (stream)
+# FlareSolverr helps Jackett bypass Cloudflare-protected indexers
 
 services:
-  # OVERSEERR SERVICE - Beautiful web UI for requesting movies/TV shows
-  overseerr:
-    image: sctx/overseerr:latest
-    container_name: overseerr
-    
-    environment:
-      - TZ=Etc/UTC
-      - LOG_LEVEL=debug
-    
-    volumes:
-      - ./config/overseerr:/app/config
-    
-    ports:
-      - "5055:5055"
-    
-    depends_on:
-      - radarr
-      - plex
-    
-    restart: unless-stopped
-
   # RADARR SERVICE - Movie download management and organization
   radarr:
     image: lscr.io/linuxserver/radarr:latest
     container_name: radarr
-    
+
     environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
       - TZ=Etc/UTC
-    
+
     volumes:
-      - ./config/radarr:/config          # Radarr settings and database
-      - ./movies:/media/movies           # Your movie library
-      - ./downloads:/media/downloads     # Recently downloaded files
-    
+      - ./config/radarr:/config
+      - ./media:/media
+
     ports:
-      - "7878:7878"                      # Radarr web interface
-    
+      - "7878:7878"
+
     depends_on:
-      - jackett
-      - qbittorrent
-    
+      jackett:
+        condition: service_healthy
+      qbittorrent:
+        condition: service_healthy
+
+    healthcheck:
+      test: curl -f http://localhost:7878/ping || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+    restart: unless-stopped
+
+  # SONARR SERVICE - TV show download management and organization
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
+      - TZ=Etc/UTC
+
+    volumes:
+      - ./config/sonarr:/config
+      - ./media:/media
+
+    ports:
+      - "8989:8989"
+
+    depends_on:
+      jackett:
+        condition: service_healthy
+      qbittorrent:
+        condition: service_healthy
+
+    healthcheck:
+      test: curl -f http://localhost:8989/ping || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
     restart: unless-stopped
 
   # JACKETT SERVICE - Torrent indexer (searches torrent sites for you)
   jackett:
-    # IMAGE: Use a pre-built Docker image from Docker Hub (like downloading an app)
-    # "latest" means get the newest version
-    # LinuxServer.io images are popular, well-maintained community images
     image: lscr.io/linuxserver/jackett:latest
     container_name: jackett
-    
+
     environment:
-      # TZ: Set timezone so logs show correct time
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
       - TZ=Etc/UTC
-    
-    # PERSISTENT STORAGE: Store app settings and data outside container
-    # When container is deleted, these files remain on your computer
+
     volumes:
-      - ./config/jackett:/config      # App settings and configuration
-      - ./downloads:/media/downloads        # Downloaded torrents go here
-    
-    # WEB UI ACCESS: Jackett runs a web interface on port 9117
+      - ./config/jackett:/config
+      - ./media:/media
+
     ports:
       - "9117:9117"
+
+    depends_on:
+      flaresolverr:
+        condition: service_healthy
+
+    healthcheck:
+      test: curl -f http://localhost:9117/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
     restart: unless-stopped
 
   # QBITTORRENT SERVICE - The actual torrent downloading client
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
     container_name: qbittorrent
-    
+
     environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
       - TZ=Etc/UTC
-      # Tell qBittorrent which port to use for its web interface
       - WEBUI_PORT=8080
-    
+
     volumes:
-      - ./config/qbittorrent:/config  # qBittorrent settings
-      - ./downloads:/media/downloads  # Where downloaded files go
-    
+      - ./config/qbittorrent:/config
+      - ./media:/media
+
     ports:
-      - "8080:8080"                   # Web UI for managing torrents
-      - "6881:6881"                   # BitTorrent protocol ports (TCP)
-      - "6881:6881/udp"              # BitTorrent protocol ports (UDP)
+      - "8080:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+
+    healthcheck:
+      test: curl -f http://localhost:8080 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+    restart: unless-stopped
+
+  # FLARESOLVERR SERVICE - Bypasses Cloudflare protection for Jackett
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+
+    environment:
+      - LOG_LEVEL=info
+      - LOG_HTML=false
+      - CAPTCHA_SOLVER=none
+      - TZ=Etc/UTC
+
+    ports:
+      - "8191:8191"
+
+    healthcheck:
+      test: curl -f http://localhost:8191 || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
     restart: unless-stopped
 
   # PLEX SERVICE - Media server (like your own Netflix)
   plex:
     image: lscr.io/linuxserver/plex:latest
     container_name: plex
-    
+
     environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=002
       - TZ=Etc/UTC
-      - PLEX_CLAIM=your-plex-claim-token  # Get from https://www.plex.tv/claim/
-    
+      - PLEX_CLAIM=${PLEX_CLAIM:-}
+
     volumes:
-      - ./config/plex:/config          # Plex database and settings
-      - ./movies:/media/movies         # Your movie library
-      - ./downloads:/media/downloads   # Recently downloaded files
-    
+      - ./config/plex:/config
+      - ./media:/media
+
     ports:
-      - "32400:32400"                  # Plex web interface
-      - "1900:1900/udp"               # Plex discovery
-      - "3005:3005"                   # Plex companion
-      - "5353:5353/udp"               # Plex companion
-      - "8324:8324"                   # Plex companion
-    
+      - "32400:32400"
+      - "1900:1900/udp"
+      - "3005:3005"
+      - "5353:5353/udp"
+      - "8324:8324"
+
+    healthcheck:
+      test: curl -f http://localhost:32400/identity || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 512M
+
     restart: unless-stopped
 
 # DOCKER NETWORKS: Create a custom network so all containers can communicate
