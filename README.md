@@ -15,7 +15,7 @@ Sonarr (TV shows) ─┘         ↑
 1. Search for a movie/show in **Radarr** or **Sonarr**
 2. They ask **Jackett** to search torrent indexers
 3. **qBittorrent** downloads the best result
-4. Radarr/Sonarr organize the files into `/media/movies` or `/media/tv`
+4. Radarr/Sonarr organize the files into `/media/movies` or `/media/tv` (on external 1TB Seagate drive)
 5. **Plex** streams them to any device
 
 ## Quick start
@@ -30,12 +30,20 @@ Sonarr (TV shows) ─┘         ↑
    # Bootstrap everything (installs Docker, clones repo, creates directories)
    ssh pi@<pi-ip> "curl -fsSL https://raw.githubusercontent.com/approveplz/rasberry-pi/master/scripts/setup-pi.sh | bash"
    ```
-3. **Log out and back in** (for Docker group), then start the stack:
+3. **Mount the external drive** (1TB Seagate):
+   ```bash
+   ssh pi@<pi-ip>
+   sudo mkdir -p /mnt/seagate
+   sudo mount /dev/sda2 /mnt/seagate
+   # Add to fstab for auto-mount on boot:
+   echo "/dev/sda2 /mnt/seagate exfat defaults,nofail 0 0" | sudo tee -a /etc/fstab
+   ```
+4. **Log out and back in** (for Docker group), then start the stack:
    ```bash
    ssh pi@<pi-ip>
    cd ~/rasberry-pi && docker compose up -d
    ```
-4. **Configure services** (see First-time configuration below)
+5. **Configure services** (see First-time configuration below)
 
 ### If already set up
 
@@ -103,7 +111,8 @@ Open `http://<pi-ip>:7878`:
   - Username: `admin`, Password: your permanent password
   - Category: `movies`
 - **Settings → Media Management:** Add root folder `/media/movies`
-- **Settings → Profiles → HD-1080p:** Uncheck "Remux-1080p" (otherwise it grabs 30-60GB files)
+- **Settings → Profiles:** Use **Ultra-HD** profile. Disable Remux-2160p. (See Quality & Custom Formats below)
+- **Settings → Custom Formats:** Import custom formats (see below)
 
 ### 4. Sonarr — same as Radarr
 
@@ -111,6 +120,8 @@ Open `http://<pi-ip>:8989`. Same setup as Radarr but:
 - Indexer categories: 5000-5080 (TV)
 - Download client category: `tv`
 - Root folder: `/media/tv`
+- **Settings → Profiles:** Use **HD-1080p** profile. Disable Remux-1080p.
+- **Settings → Custom Formats:** Import same custom formats as Radarr
 
 ### 5. Plex — claim via SSH tunnel
 
@@ -134,23 +145,42 @@ Kill the tunnel when done: `pkill -f "ssh -f -N -L 32400"`
 
 ## Important settings
 
+### Storage — external drive
+
+Media is stored on a **1TB Seagate USB drive** mounted at `/mnt/seagate/media-server`. Docker-compose maps this to `/media` inside containers. The SD card only holds the OS and service configs.
+
+The drive auto-mounts via `/etc/fstab`. If it stops mounting, check `lsblk` and verify the fstab entry.
+
 ### qBittorrent save path
 
 qBittorrent must save to `/media/downloads/` (not `/downloads/`). The container only has `/media` mounted.
 
 Set in qBittorrent: Tools → Options → Downloads → Default Save Path → `/media/downloads/`
 
-### Indexer size limits
-
-Set a **10GB max size** on each indexer in Radarr/Sonarr (Settings → Indexers → edit each one → Maximum Size). This prevents grabbing multi-language Blu-ray rips that are 30+ GB.
+> **Note:** This setting resets if the qBittorrent container is recreated. The config file at `config/qbittorrent/qBittorrent/qBittorrent.conf` must have both `Session\DefaultSavePath=/media/downloads` and `Downloads\SavePath=/media/downloads/`.
 
 ### Quality profiles
 
-Use **HD-1080p** profile for both Radarr and Sonarr with these allowed:
-- HDTV-1080p
-- WEB 1080p
-- Bluray-1080p
-- ~~Remux-1080p~~ (disable this — too large)
+**Movies (Radarr):** Ultra-HD profile
+- Allowed: HDTV-2160p, WEB 2160p, Bluray-2160p
+- Disabled: ~~Remux-2160p~~ (too large, 30-60GB)
+
+**TV (Sonarr):** HD-1080p profile
+- Allowed: HDTV-1080p, WEB 1080p, Bluray-1080p
+- Disabled: ~~Remux-1080p~~ (too large)
+
+### Custom formats (the smart way to control file size)
+
+Instead of blunt size limits, custom formats score releases by attributes. Create these in **both Radarr and Sonarr** (Settings → Custom Formats):
+
+| Custom Format | What it matches | Score | Effect |
+|---|---|---|---|
+| **Lossless Audio** | DTS-HD MA, TrueHD, Atmos, FLAC, PCM | -10000 | Rejected (these bloat files 5-10x) |
+| **Multi-Language** | MULTi4+, DUAL Audio, MULTiSUBS | -10000 | Rejected (adds 10-30GB of extra audio tracks) |
+| **x265/HEVC** | x265, HEVC, h.265 | +100 | Preferred (modern codec, ~50% smaller than x264) |
+| **AV1** (Radarr only) | AV1 | +150 | Most preferred (newest codec, smallest files) |
+
+Then assign these scores in the quality profile: Settings → Profiles → edit profile → Custom Formats tab → set scores as above. Set "Minimum Custom Format Score" to **-5000** (rejects anything with lossless audio or multi-language).
 
 ### BitTorrent port
 
@@ -235,11 +265,11 @@ If qBittorrent's save path is `/downloads/` instead of `/media/downloads/`, torr
 
 **Fix:** Tools → Options → Downloads → Default Save Path → `/media/downloads/`
 
-### Radarr grabs huge files (30-60GB REMUX or multi-language)
+### Radarr/Sonarr grabs huge files (30-60GB)
 
-Two things to fix:
-1. **Disable Remux-1080p** in the quality profile: Settings → Profiles → HD-1080p → uncheck Remux-1080p
-2. **Set max size on indexers:** Settings → Indexers → edit each → Maximum Size → 10240 MB
+Usually caused by lossless audio (DTS-HD MA, TrueHD) or multi-language packs.
+
+**Fix:** Set up custom formats (see "Custom formats" section above). The `-10000` score on Lossless Audio and Multi-Language will reject these automatically. Also make sure REMUX is disabled in the quality profile.
 
 ### Radarr rejects Jackett `/all` endpoint
 
@@ -278,17 +308,23 @@ If your Mac has Kandji MDM, it blocks USB storage. Use a personal laptop to flas
 ## Directory structure
 
 ```
-rasberry-pi/
-├── config/              # Auto-generated service configs (gitignored)
-├── media/
-│   ├── movies/          # Organized movie library
-│   ├── tv/              # Organized TV library
-│   └── downloads/       # Active downloads
+~/rasberry-pi/                      # On the Pi (cloned from GitHub)
+├── config/                         # Auto-generated service configs (gitignored)
 ├── scripts/
-│   ├── setup-pi.sh      # Fresh Pi bootstrap
-│   ├── health-check.sh  # Verify all services
+│   ├── setup-pi.sh                 # Fresh Pi bootstrap
+│   ├── health-check.sh             # Verify all services
 │   └── get-qbittorrent-credentials.sh
 ├── docker-compose.yml
-├── .env.template        # Environment variable template
-└── .env                 # Your secrets (gitignored)
+├── .env.template                   # Environment variable template
+└── .env                            # Your secrets (gitignored)
+
+/mnt/seagate/media-server/          # External 1TB Seagate USB drive
+├── movies/                         # Organized movie library (4K)
+├── tv/                             # Organized TV library (1080p)
+└── downloads/                      # Active downloads
+    ├── incomplete/                 # In-progress torrents
+    ├── radarr/                     # Completed movie downloads
+    └── tv-sonarr/                  # Completed TV downloads
 ```
+
+> Docker-compose maps `/mnt/seagate/media-server` → `/media` inside all containers.
