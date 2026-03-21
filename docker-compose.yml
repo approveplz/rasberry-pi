@@ -16,7 +16,7 @@ services:
 
     volumes:
       - ./config/radarr:/config
-      - ./media:/media
+      - /mnt/seagate/media-server:/media
 
     ports:
       - "7878:7878"
@@ -50,7 +50,7 @@ services:
 
     volumes:
       - ./config/sonarr:/config
-      - ./media:/media
+      - /mnt/seagate/media-server:/media
 
     ports:
       - "8989:8989"
@@ -84,7 +84,7 @@ services:
 
     volumes:
       - ./config/jackett:/config
-      - ./media:/media
+      - /mnt/seagate/media-server:/media
 
     ports:
       - "9117:9117"
@@ -117,7 +117,7 @@ services:
 
     volumes:
       - ./config/qbittorrent:/config
-      - ./media:/media
+      - /mnt/seagate/media-server:/media
 
     ports:
       - "8080:8080"
@@ -172,7 +172,7 @@ services:
 
     volumes:
       - ./config/plex:/config
-      - ./media:/media
+      - /mnt/seagate/media-server:/media
 
     ports:
       - "32400:32400"
