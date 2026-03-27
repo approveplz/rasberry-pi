@@ -193,7 +193,7 @@ services:
 
   # OPENCLAW SERVICE - AI assistant (media manager via chat)
   openclaw-gateway:
-    image: ghcr.io/openclaw/openclaw:latest
+    image: ghcr.io/openclaw/openclaw:2026.3.11
     container_name: openclaw-gateway
 
     environment:
@@ -201,6 +201,7 @@ services:
       - TERM=xterm-256color
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - NODE_OPTIONS=--max-old-space-size=1536
       - TZ=Etc/UTC
 
     volumes:
@@ -216,8 +217,31 @@ services:
       retries: 5
       start_period: 20s
 
-    mem_limit: 512m
+    mem_limit: 2g
     restart: unless-stopped
+
+  # OPENCLAW CLI - Interactive commands and onboarding (not always-on)
+  openclaw-cli:
+    image: ghcr.io/openclaw/openclaw:2026.3.11
+    environment:
+      - HOME=/home/node
+      - TERM=xterm-256color
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - NODE_OPTIONS=--max-old-space-size=1536
+      - TZ=Etc/UTC
+
+    volumes:
+      - ./config/openclaw:/home/node/.openclaw
+
+    stdin_open: true
+    tty: true
+    init: true
+    entrypoint: ["node", "dist/index.js"]
+    mem_limit: 2g
+
+    depends_on:
+      - openclaw-gateway
 
 # DOCKER NETWORKS: Create a custom network so all containers can communicate
 # Docker automatically creates DNS entries so "jackett" resolves to the jackett container
