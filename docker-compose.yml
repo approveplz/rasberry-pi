@@ -211,6 +211,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /mnt/seagate:/mnt/seagate:ro
       - /sys:/host-sys:ro
+    group_add:
+      - "985"
 
     ports:
       - "18789:18789"
