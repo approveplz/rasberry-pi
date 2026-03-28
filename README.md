@@ -5,6 +5,9 @@ Automated media pipeline running on a Raspberry Pi 4 (8GB). Search, download, or
 ## How it works
 
 ```
+                    OpenClaw (Telegram bot)
+                         │ manages via API
+                         ▼
 Radarr (movies) ──┐
                    ├──→ Jackett (search) ──→ qBittorrent (download) ──→ Plex (stream)
 Sonarr (TV shows) ─┘         ↑
@@ -44,7 +47,14 @@ Sonarr (TV shows) ─┘         ↑
    ssh pi@<pi-ip>
    cd ~/rasberry-pi && docker compose up -d
    ```
-5. **Configure services** (see First-time configuration below)
+5. **Install Tailscale** for remote access (optional but recommended):
+   ```bash
+   ssh pi@<pi-ip>
+   curl -fsSL https://tailscale.com/install.sh | sh
+   sudo tailscale up --hostname=pi
+   # Approve the auth URL in your browser
+   ```
+6. **Configure services** (see First-time configuration below)
 
 ### If already set up
 
@@ -70,6 +80,7 @@ cd ~/rasberry-pi && git pull && docker compose up -d
 | Jackett | `http://<pi-ip>:9117` | Torrent indexer config |
 | qBittorrent | `http://<pi-ip>:8080` | Download client |
 | Plex | `http://<pi-ip>:32400` | Media streaming |
+| OpenClaw | `http://<pi-ip>:18789` | AI assistant control UI |
 
 ## First-time configuration
 
@@ -143,6 +154,34 @@ Sign in with your Plex account, claim the server, and add libraries:
 After claiming, you can access Plex directly at `http://<pi-ip>:32400`.
 
 Kill the tunnel when done: `pkill -f "ssh -f -N -L 32400"`
+
+### 6. OpenClaw — AI media assistant via Telegram
+
+OpenClaw is an AI agent that manages the media stack through Telegram. Message it to search, download, and monitor movies/TV shows.
+
+**Onboarding (one-time):**
+```bash
+cd ~/rasberry-pi
+docker compose run --rm --no-deps --entrypoint '' openclaw-gateway \
+  node dist/index.js onboard --mode local --no-install-daemon
+```
+
+During onboarding, select:
+- **Provider:** OpenAI → API key
+- **Channel:** Telegram → paste bot token from @BotFather
+
+**After onboarding, start the gateway:**
+```bash
+docker compose up -d openclaw-gateway
+```
+
+**Pair your Telegram account:**
+1. Message the bot in Telegram — it'll respond with a pairing code
+2. Approve it: `docker compose exec openclaw-gateway node dist/index.js pairing approve telegram <CODE>`
+
+**Custom skill:** The `radarr-sonarr` skill at `config/openclaw/workspace/skills/radarr-sonarr/SKILL.md` gives the bot access to Radarr and Sonarr APIs. It can search, add, list, and check download status for movies and TV shows.
+
+> **Note:** OpenClaw is pinned to v2026.3.11 — later versions (3.12+) have memory leak issues on Pi 4. Check GitHub issues before upgrading.
 
 ## Important settings
 
@@ -226,6 +265,8 @@ cp .env.template .env
 | `JACKETT_API_KEY` | Copy from Jackett UI after setup |
 | `QBITTORRENT_USERNAME` | Default: `admin` |
 | `QBITTORRENT_PASSWORD` | **Set a permanent one immediately** (see configuration above) |
+| `OPENAI_API_KEY` | OpenAI API key for OpenClaw (pay-as-you-go) |
+| `OPENCLAW_GATEWAY_TOKEN` | Auto-generated during onboarding — used for control UI auth |
 
 ## Memory budget (8GB Pi)
 
@@ -237,8 +278,9 @@ cp .env.template .env
 | Plex | 1 GB |
 | Jackett | 512 MB |
 | FlareSolverr | 512 MB |
-| **Total** | **~5 GB** |
-| Pi OS + headroom | ~3 GB |
+| OpenClaw | 2 GB |
+| **Total** | **~7 GB** |
+| Pi OS + headroom | ~1 GB |
 
 > Limits are set via `mem_limit` in docker-compose.yml. Verify with `docker stats --no-stream`.
 
@@ -331,9 +373,31 @@ To recover: re-flash the SD card with Raspberry Pi Imager and follow the Fresh P
 
 If your Mac has Kandji MDM, it blocks USB storage. Use a personal laptop to flash/mount SD cards.
 
+## Remote access (Tailscale)
+
+Tailscale lets you access the Pi and all services from anywhere (not just your home WiFi). It creates a WireGuard mesh VPN that punches through CGNAT — no port forwarding needed.
+
+**Install (one-time, on the Pi):**
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --hostname=pi
+# Opens an auth URL — approve it in your browser
+```
+
+Once connected, the Pi gets a stable Tailscale IP (e.g. `100.x.y.z`). Use it exactly like the local IP:
+```bash
+ssh pi@<tailscale-ip>
+open http://<tailscale-ip>:7878   # Radarr from anywhere
+open http://<tailscale-ip>:32400  # Plex from anywhere
+```
+
+Tailscale runs as a native systemd service — it auto-starts on boot and reconnects after power loss.
+
+> **Note:** Tailscale must also be installed on the device you're connecting from (Mac, iPhone, iPad). Install from https://tailscale.com/download and sign in with the same account.
+
 ## Network notes
 
-- **CGNAT:** If your ISP uses CGNAT (check: `traceroute 8.8.8.8` — look for `100.64.x.x` hop), incoming torrent connections are blocked. Torrents still work via outgoing connections, just slower to start. A VPN with port forwarding (e.g. Mullvad $5/mo) would fix this.
+- **CGNAT:** Your ISP uses CGNAT (`100.64.x.x` hop in traceroute). Incoming connections are blocked, but **Tailscale bypasses this entirely** — see Remote access section above.
 - **Eero router:** Managed via phone app only (no web admin at 192.168.4.1). Set IP reservation and port forwarding in the Eero app.
 
 ## Directory structure
@@ -347,7 +411,11 @@ If your Mac has Kandji MDM, it blocks USB storage. Use a personal laptop to flas
 │   └── get-qbittorrent-credentials.sh
 ├── docker-compose.yml
 ├── .env.template                   # Environment variable template
-└── .env                            # Your secrets (gitignored)
+├── .env                            # Your secrets (gitignored)
+└── config/openclaw/                # OpenClaw state (gitignored)
+    ├── openclaw.json               # Main config (provider, channels, gateway)
+    └── workspace/skills/           # Custom skills
+        └── radarr-sonarr/SKILL.md  # Media server integration skill
 
 /mnt/seagate/media-server/          # External 1TB Seagate USB drive
 ├── movies/                         # Organized movie library (4K)
