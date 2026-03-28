@@ -202,6 +202,8 @@ services:
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - NODE_OPTIONS=--max-old-space-size=1536
+      - NODE_COMPILE_CACHE=/var/tmp/openclaw-compile-cache
+      - OPENCLAW_NO_RESPAWN=1
       - TZ=Etc/UTC
 
     volumes:
