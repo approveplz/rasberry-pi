@@ -208,6 +208,9 @@ services:
 
     volumes:
       - ./config/openclaw:/home/node/.openclaw
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /mnt/seagate:/mnt/seagate:ro
+      - /sys:/host-sys:ro
 
     ports:
       - "18789:18789"
